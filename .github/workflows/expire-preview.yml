@@ -1,0 +1,42 @@
+name: Expire seven-day website preview
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  expire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Remove hosted HTML after 7 days
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="docs/index.html"
+          if [[ ! -f "$FILE" ]]; then
+            echo "No active preview is hosted."
+            exit 0
+          fi
+          FIRST=$(git log --diff-filter=A --format=%ct -- "$FILE" | tail -n 1)
+          if [[ -z "$FIRST" ]]; then
+            echo "::error::Could not establish first deployment commit time."
+            exit 1
+          fi
+          DEADLINE=$(( FIRST + 604800 ))
+          NOW=$(date +%s)
+          echo "Preview first committed: $(date -u -d "@$FIRST")"
+          echo "Seven-day deadline: $(date -u -d "@$DEADLINE")"
+          if (( NOW < DEADLINE )); then
+            echo "Not expired yet."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -- "$FILE"
+          git commit -m "chore: remove public preview after seven days"
+          git push
+          echo "Preview HTML removed. Pages publication can take time to update."
